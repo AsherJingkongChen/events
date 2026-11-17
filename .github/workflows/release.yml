@@ -13,12 +13,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # A target is here when someone runs events on it; anyone else builds with cargo install,
+        # and asks for theirs in an issue.
         include:
           - { os: macos-15, target: aarch64-apple-darwin }
-          - { os: macos-15, target: x86_64-apple-darwin }
           # musl is linked whole into the binary, which then runs whatever libc the machine has
           - { os: ubuntu-24.04, target: x86_64-unknown-linux-musl }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -37,6 +37,12 @@ jobs:
           tar -czf "dist/events-${GITHUB_REF_NAME}-${{ matrix.target }}.tgz" \
             -C "target/${{ matrix.target }}/release" events \
             -C "${GITHUB_WORKSPACE}" .claude/skills/events
+      - name: What was packed runs, and holds the skill
+        run: |
+          mkdir unpacked
+          tar -xzf dist/*.tgz -C unpacked
+          unpacked/events --version
+          test -s unpacked/.claude/skills/events/SKILL.md
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
