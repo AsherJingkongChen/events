@@ -62,6 +62,11 @@ enum Command {
     Stop,
     /// Be the one live process: run each event at its moment, answer at the door. Its event loop
     /// does one thing at a time, so events at the same moment run one after another.
+    ///
+    /// It makes the home if it is missing, and holds it: a second serve on the same home exits
+    /// with an error. The home's .env holds the keys, which the user fills and serve reads each
+    /// time it sends, so a change needs no restart: PUSHOVER_API_TOKEN, of an application made at
+    /// https://pushover.net/apps/build; PUSHOVER_USER_KEY, from the Pushover dashboard.
     Serve,
 }
 

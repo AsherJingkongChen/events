@@ -13,6 +13,7 @@ allowed-tools: Bash(events --help), Bash(events add --help), Bash(events get --h
 - **Waking someone**: `"priority":2` with `"retry"` (seconds between repeats, 30 or more) and `"expire"` (seconds it keeps repeating, 10800 at most) repeats until the user taps it. `"priority":1` sounds through quiet hours.
 - **Space events apart.** serve's event loop does one thing at a time: events at the same moment run one after another, and a slow one holds the next for up to its retries × timeout.
 - **Check**: `events get --short` lists what waits; `events get --expired --short` what has passed. Read one in full with `events get ID`, and pick fields with jq. An expired event's `result.http` is the reply it got: a 2xx `status` is done, another failed and its `body` says why; `result` null was missed because serve was not running at its moment; `result.http` null was missed too, and `result.error` says why (a key not set, the network, the timeout). A missed or failed event is not tried again; tell the user.
+- **A key not set**: when `result.error` names a key of `.env`, tell the user which, and where it comes from (`events serve --help` says); never open `.env` yourself.
 - **Change**: there is no update. `events del ID`, then add again.
 - **Keep the record.** Expired events are never deleted for you; delete only what the user wants gone.
 - **Something wrong with events itself**: tell the user, and with their word open an issue at the address that ends `events --help`.

@@ -13,7 +13,7 @@ On Linux or macOS.
 1. Take the binary for your machine from https://github.com/AsherJingkongChen/events/releases and put `events` on your PATH, or build it: `cargo install --locked --git https://github.com/AsherJingkongChen/events`
 2. From a clone, copy the skill: `cp -r .claude/skills/events ~/.claude/skills/`
 3. Keep `events serve` running under your platform's supervisor: a systemd user service with lingering on Linux, a launchd agent on macOS. Your Claude can write it. On its first start serve makes its home, `~/.local/share/events` (700), with an empty `store.jsonl` and a `.env` of empty keys. One serve runs a home; a second exits with an error.
-4. Fill `~/.local/share/events/.env`: `PUSHOVER_API_TOKEN` from an application you make at https://pushover.net/apps/build, `PUSHOVER_USER_KEY` from your Pushover dashboard. It is read each time a message is sent, so serve needs no restart.
+4. Fill the keys in `~/.local/share/events/.env`; `events serve --help` says which they are and where they come from. serve reads them each time it sends, so it needs no restart.
 
 `EVENTS_HOME` puts the home elsewhere; so does `XDG_DATA_HOME`, as `$XDG_DATA_HOME/events`.
 
