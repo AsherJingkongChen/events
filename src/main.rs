@@ -15,6 +15,22 @@ use jiff::Timestamp;
 ///     - Arguments: the function's fields, in JSON: {"pushover":{"title":"exam","message":"13:20"}}
 ///     - Result: what came back: {"error":null,"http":{"status":200,"body":{"json":{"status":1}}}}
 ///
+/// The same, every part, as JSON in BNF. Times are RFC 3339 in UTC, timeout is in seconds. A
+/// pushover field that is null may be left out of --function.
+///
+///   event    ::= { id: uint, label: string, at: rfc3339, retries: uint, timeout: uint,
+///                  function: function, expired: bool, result: result | null }
+///   function ::= { pushover: pushover }
+///   pushover ::= { message: string, title: string | null, url: string | null,
+///                  url_title: string | null, priority: int | null, sound: string | null,
+///                  timestamp: uint | null, ttl: uint | null, device: string | null,
+///                  html: bool | null, monospace: bool | null, retry: uint | null,
+///                  expire: uint | null, callback: string | null, tags: string | null,
+///                  attachment_base64: string | null, attachment_type: string | null }
+///   result   ::= { error: string | null, http: http | null }
+///   http     ::= { status: uint, body: body }
+///   body     ::= { json: json } | { text: string }
+///
 /// `events serve` is the one live process; every other command asks it at the door, serve.sock
 /// in the home. The home is $EVENTS_HOME; if that is unset, $XDG_DATA_HOME/events; if that is
 /// unset too, ~/.local/share/events. Answers are JSON, one event a line: read them with jq.
