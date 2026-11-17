@@ -1,0 +1,58 @@
+name: release
+
+# A tag v<version> releases that version: a binary for each target, attested, on the release page.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-15, target: aarch64-apple-darwin }
+          - { os: macos-15, target: x86_64-apple-darwin }
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: The pinned toolchain from rust-toolchain.toml, for this target
+        run: rustup toolchain install && rustup target add "${{ matrix.target }}"
+      - name: The tag names the version in Cargo.toml
+        run: test "${GITHUB_REF_NAME}" = "v$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+      - run: cargo build --release --locked --target "${{ matrix.target }}"
+      - name: Pack
+        run: |
+          mkdir dist
+          tar -czf "dist/events-${GITHUB_REF_NAME}-${{ matrix.target }}.tgz" -C "target/${{ matrix.target }}/release" events
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*.tgz
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          repo="${{ github.server_url }}/${{ github.repository }}"
+          gh release create "${GITHUB_REF_NAME}" dist/*.tgz \
+            --repo "${{ github.repository }}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "Install: ${repo}/blob/${GITHUB_REF_NAME}/README.md#install"

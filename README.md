@@ -8,9 +8,9 @@ This page is the first-time read: installing and uninstalling. Daily use is in t
 
 ## Install
 
-On Linux or macOS, with Rust.
+On Linux or macOS.
 
-1. `cargo install --locked --git https://github.com/AsherJingkongChen/events`
+1. Take the binary for your machine from https://github.com/AsherJingkongChen/events/releases and put `events` on your PATH, or build it: `cargo install --locked --git https://github.com/AsherJingkongChen/events`
 2. From a clone, copy the skill: `cp -r .claude/skills/events ~/.claude/skills/`
 3. Keep `events serve` running under your platform's supervisor: a systemd user service with lingering on Linux, a launchd agent on macOS. Your Claude can write it. On its first start serve makes its home, `~/.local/share/events` (700), with an empty `store.jsonl` and a `.env` of empty keys. One serve runs a home; a second exits with an error.
 4. Fill `~/.local/share/events/.env`: `PUSHOVER_API_TOKEN` from an application you make at https://pushover.net/apps/build, `PUSHOVER_USER_KEY` from your Pushover dashboard. It is read each time a message is sent, so serve needs no restart.
@@ -20,7 +20,7 @@ On Linux or macOS, with Rust.
 ## Uninstall
 
 1. Stop and remove the service: `systemctl --user disable --now` it and delete its unit, or `launchctl bootout` it and delete its plist.
-2. `cargo uninstall events`
+2. Delete the `events` binary, or `cargo uninstall events` if you built it.
 3. `rm -r ~/.claude/skills/events`
 4. `rm -r ~/.local/share/events`. It holds your keys (`.env`) and the record of every event (`store.jsonl`): keep a copy of what you want.
 
