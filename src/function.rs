@@ -1,13 +1,12 @@
-//! What an event does when its moment comes: a command for bash, and what goes into its stdin.
-//!
-//! The command holds nothing private. Keys and everything of the message go through stdin, so `ps`,
-//! which anyone on the machine can run, shows only the command.
+//! What an event does when its moment comes. Each kind is sent from here, in Rust: no command is
+//! run, so nothing of it shows in `ps`, and no tool's version on the machine can change it.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::event::Http;
+use crate::event::{Http, Outcome};
 use crate::{Error, Result};
 
 /// The kinds of function, each named by its key: `{"pushover":{...}}`.
@@ -136,56 +135,53 @@ impl Function {
         Ok(serde_json::from_str(json)?)
     }
 
-    /// The command bash runs. It holds no key and nothing of the message. It ends 0 only when the
-    /// message went through: curl's own failure ends it with curl's code, and an HTTP status of
-    /// 400 or more with 22, as `--fail-with-body` would (curl before 7.76 has no such flag). It
-    /// prints the body, then the status on a line of its own.
-    pub fn to_bash(&self) -> String {
-        match self {
-            Function::Pushover(_) => format!(
-                "out=$(curl -sS -w '\\n%{{http_code}}' -K - {PUSHOVER_MESSAGES}) || exit $?; \
-                 printf '%s' \"$out\"; \
-                 [ \"${{out##*$'\\n'}}\" -lt 400 ] || exit 22"
-            ),
-        }
-    }
-
-    /// What goes into the command's stdin: here, curl's config lines, one `form-string` a field,
-    /// the keys from `env` first. A key missing or empty is the reason the command is not run.
-    pub fn to_stdin(&self, env: &HashMap<String, String>) -> Result<String, String> {
+    /// Send it, waiting at most `timeout` for the whole reply. `keys` are `.env`'s: one missing or
+    /// empty is the reason nothing is sent, the error. What comes back, a reply or why none came,
+    /// is the outcome.
+    pub fn send(
+        &self,
+        keys: &HashMap<String, String>,
+        timeout: Duration,
+    ) -> Result<Outcome, String> {
         match self {
             Function::Pushover(p) => {
-                let mut lines = String::new();
+                let mut form = Vec::new();
                 for key in &PUSHOVER_KEYS {
-                    match env.get(key.env) {
-                        Some(value) if !value.is_empty() => {
-                            lines.push_str(&form_string(key.field, value));
-                        }
+                    match keys.get(key.env) {
+                        Some(value) if !value.is_empty() => form.push((key.field, value.clone())),
                         Some(_) => return Err(format!("{} is empty in .env", key.env)),
                         None => return Err(format!("{} is not in .env", key.env)),
                     }
                 }
-                for (name, value) in p.fields() {
-                    lines.push_str(&form_string(name, &value));
-                }
-                Ok(lines)
-            }
-        }
-    }
-
-    /// The HTTP reply in what the command printed, when it got one. The command prints the body,
-    /// then a line with the status, which curl writes as 000 when no reply came.
-    pub fn http(&self, stdout: &str) -> Option<Http> {
-        match self {
-            Function::Pushover(_) => {
-                let (body, status) = stdout.rsplit_once('\n')?;
-                match status.trim().parse::<u16>() {
-                    Ok(0) | Err(_) => None,
-                    Ok(status) => Some(Http {
-                        status,
-                        body: body.to_string(),
-                    }),
-                }
+                form.extend(p.fields());
+                let config = ureq::Agent::config_builder()
+                    .timeout_global(Some(timeout))
+                    // a 4xx is an answer to keep, not an error to raise
+                    .http_status_as_error(false)
+                    .build();
+                let agent = ureq::Agent::new_with_config(config);
+                Ok(match agent.post(PUSHOVER_MESSAGES).send_form(form) {
+                    Ok(mut reply) => {
+                        let status = reply.status().as_u16();
+                        match reply.body_mut().read_to_string() {
+                            Ok(body) => Outcome {
+                                error: None,
+                                http: Some(Http { status, body }),
+                            },
+                            Err(e) => Outcome {
+                                error: Some(format!("reading the reply failed: {e}")),
+                                http: Some(Http {
+                                    status,
+                                    body: String::new(),
+                                }),
+                            },
+                        }
+                    }
+                    Err(e) => Outcome {
+                        error: Some(e.to_string()),
+                        http: None,
+                    },
+                })
             }
         }
     }
@@ -202,67 +198,5 @@ impl Function {
                 _ => Ok(()),
             },
         }
-    }
-}
-
-/// One line of curl's config: `form-string = "name=value"`, the value escaped as curl reads a
-/// quoted parameter, so a quote, a backslash or a newline in it stays itself.
-fn form_string(name: &str, value: &str) -> String {
-    let mut line = format!("form-string = \"{name}=");
-    for c in value.chars() {
-        match c {
-            '\\' => line.push_str("\\\\"),
-            '"' => line.push_str("\\\""),
-            '\n' => line.push_str("\\n"),
-            '\r' => line.push_str("\\r"),
-            '\t' => line.push_str("\\t"),
-            '\u{b}' => line.push_str("\\v"),
-            c => line.push(c),
-        }
-    }
-    line.push_str("\"\n");
-    line
-}
-
-#[cfg(test)]
-#[expect(
-    clippy::unwrap_used,
-    reason = "in a test an unwrap that fails is the test failing"
-)]
-mod tests {
-    use super::*;
-
-    fn env() -> HashMap<String, String> {
-        HashMap::from([
-            (
-                "PUSHOVER_API_TOKEN".to_string(),
-                "tokentokentoken".to_string(),
-            ),
-            ("PUSHOVER_USER_KEY".to_string(), "useruseruser".to_string()),
-        ])
-    }
-
-    #[test]
-    fn the_command_holds_nothing_private() {
-        let mut p = Pushover::new("the final is at 13:20");
-        p.title = Some("image processing".into());
-        let f = Function::Pushover(p);
-        let bash = f.to_bash();
-        for private in [
-            "tokentokentoken",
-            "useruseruser",
-            "13:20",
-            "image processing",
-        ] {
-            assert!(!bash.contains(private), "{private} is in {bash}");
-            assert!(f.to_stdin(&env()).unwrap().contains(private));
-        }
-    }
-
-    #[test]
-    fn a_quote_a_backslash_and_a_newline_stay_themselves() {
-        let f = Function::Pushover(Pushover::new("say \"hi\"\\\nbye"));
-        let stdin = f.to_stdin(&env()).unwrap();
-        assert!(stdin.contains("form-string = \"message=say \\\"hi\\\"\\\\\\nbye\"\n"));
     }
 }

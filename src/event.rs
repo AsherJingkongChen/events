@@ -27,17 +27,14 @@ pub struct Event {
     pub result: Option<Outcome>,
 }
 
-/// What a try gave.
+/// What a try gave: a reply, or why none came. A 2xx reply is done; another reply failed; no reply
+/// is missed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Outcome {
-    /// Null when the command did not end by itself: it never started, or it was killed.
-    pub exit_code: Option<i32>,
-    /// What serve says when the command could not: why it never started, or why it was killed.
+    /// Why no reply came, or why it was not read whole: a key not set, the network, the timeout.
     pub error: Option<String>,
-    /// What the command said on stderr.
-    pub stderr: String,
-    /// The HTTP reply, when the function speaks HTTP and got one.
+    /// The reply, when one came.
     pub http: Option<Http>,
 }
 
@@ -60,12 +57,10 @@ pub enum Due {
 }
 
 impl Outcome {
-    /// A try whose command never started, and why.
+    /// A try that sent nothing, and why.
     pub fn not_run(why: String) -> Outcome {
         Outcome {
-            exit_code: None,
             error: Some(why),
-            stderr: String::new(),
             http: None,
         }
     }
@@ -107,10 +102,10 @@ impl Event {
         let state = match (self.expired, &self.result) {
             (false, _) => "waiting",
             (true, None) => "expired, missed",
-            (true, Some(outcome)) => match outcome.exit_code {
-                Some(0) => "expired, done",
-                None => "expired, missed",
+            (true, Some(outcome)) => match &outcome.http {
+                Some(h) if (200..300).contains(&h.status) => "expired, done",
                 Some(_) => "expired, failed",
+                None => "expired, missed",
             },
         };
         format!("{} | {} | {}: {}", self.id, self.at, self.label, state)

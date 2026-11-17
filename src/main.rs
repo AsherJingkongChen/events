@@ -45,8 +45,8 @@ enum Command {
         timeout: u64,
     },
     /// Print the events still waiting, one a line; with --expired, the ones whose moment has
-    /// passed; with an id, that one. An expired event has a result unless it was missed: its
-    /// exit_code is 0 when it was done, null when it never ran or was killed (error says why).
+    /// passed; with an id, that one. An expired event's result.http is the reply it got: a 2xx
+    /// status is done, another failed; null is missed, and result.error says why.
     Get {
         id: Option<u64>,
         /// The expired events instead of the waiting ones.

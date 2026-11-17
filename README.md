@@ -8,7 +8,7 @@ This page is the first-time read: installing and uninstalling. Daily use is in t
 
 ## Install
 
-On Linux or macOS, with Rust, bash and curl.
+On Linux or macOS, with Rust.
 
 1. `cargo install --locked --git https://github.com/AsherJingkongChen/events`
 2. From a clone, copy the skill: `cp -r .claude/skills/events ~/.claude/skills/`
