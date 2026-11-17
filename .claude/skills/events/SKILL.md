@@ -6,16 +6,20 @@ allowed-tools: Bash(events --help), Bash(events add --help), Bash(events get --h
 
 # events
 
-`events serve` runs all the time on this machine; if `events get` says serve is not running, the README of the repo tells how it is kept alive. You reach it only through the `events` command. Never read or edit the files in its home (`~/.local/share/events`): `.env` there holds the user's keys.
+`events serve` runs all the time on this machine and keeps the clock; you only tell it what to do, through the `events` command. A Claude session sleeps, is compacted, is cleared: never be the clock yourself.
 
-- **Add**: `events add --at <RFC 3339> --label <your name> < function.json`. The function is JSON on stdin, never on the command line, where anyone on the machine can read it. Today its one kind is `{"pushover":{...}}`, its fields named as https://pushover.net/api names them: `message` is required; `title`, `priority`, `sound`, `url` and the rest are optional.
-- **One event is one moment.** To warn early, add a second event at the earlier moment.
-- **Waking someone**: `"priority":2` with `"retry"` (seconds between repeats, 30 or more) and `"expire"` (seconds it keeps repeating, 10800 at most) repeats until the user taps it. `"priority":1` sounds through quiet hours.
-- **Space events apart.** serve's event loop does one thing at a time: events at the same moment run one after another, and a slow one holds the next for up to its retries × timeout.
-- **Check**: `events get --short` lists what waits; `events get --expired --short` what has passed. Read one in full with `events get ID`, and pick fields with jq. An expired event's `result.http` is the reply it got: a 2xx `status` is done, another failed and its `body` says why; `result` null was missed because serve was not running at its moment; `result.http` null was missed too, and `result.error` says why (a key not set, the network, the timeout). A missed or failed event is not tried again; tell the user.
-- **A key not set**: when `result.error` names a key of `.env`, tell the user which, and where it comes from (`events serve --help` says); never open `.env` yourself.
-- **Change**: there is no update. `events del ID`, then add again.
-- **Keep the record.** Expired events are never deleted for you; delete only what the user wants gone.
+What you hand it, and what it hands back, is a pyramid. What to judge at each level:
+
+- **Event**: when (`--at`), who (`--label`, your name), how hard to try (`--retries`, `--timeout`).
+  - One event is one moment. To warn early, add a second event at the earlier moment.
+  - Its moment must be still to come. There is no update: `events del ID`, then add again.
+  - serve does one thing at a time, so events at the same moment run one after another and a slow one holds the next: space events that matter a minute apart.
+  - Expired events are never deleted for you; they are the record. Delete only what the user wants gone.
+  - **Function**: what happens at the moment. Today one kind, `pushover`, a message on the user's phone.
+    - **Arguments**: the function's fields, by `--function`. To wake someone, `"priority":2` with `"retry"` (seconds between repeats, 30 or more) and `"expire"` (seconds it keeps repeating, 10800 at most) repeats until the user taps it; `"priority":1` sounds through quiet hours. A message others on the machine should not see in `ps` goes by `--function @-` from a heredoc.
+    - **Result**: what came back, once the event has expired. `result.http.status` 2xx: done. Another status: failed, and `result.http.body` says why. `result.http` null: missed, and `result.error` says why. `result` null: missed, because serve was not running at its moment. Nothing missed or failed is tried again: tell the user.
+- **Keys**: they live in the home's `.env`, which only the user fills (`events serve --help` names them). When `result.error` names one, tell the user which and where it comes from. Never open `.env` or anything else in the home.
+- **serve not running**: the README of the repo says how it is kept alive; say so to the user rather than starting one on your own.
 - **Something wrong with events itself**: tell the user, and with their word open an issue at the address that ends `events --help`.
 
 ## Every command

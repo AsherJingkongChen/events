@@ -15,7 +15,7 @@ mod shipit;
 
 pub use client::ask;
 pub use error::{Error, Result};
-pub use event::{Due, Event, Http, Outcome, Request, Response};
+pub use event::{Body, Due, Event, Http, Outcome, Request, Response};
 pub use function::{Function, Pushover};
 pub use home::Home;
 pub use serve::serve;

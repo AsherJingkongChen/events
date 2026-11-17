@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::event::{Http, Outcome};
+use crate::event::{Body, Http, Outcome};
 use crate::{Error, Result};
 
 /// The kinds of function, each named by its key: `{"pushover":{...}}`.
@@ -166,13 +166,16 @@ impl Function {
                         match reply.body_mut().read_to_string() {
                             Ok(body) => Outcome {
                                 error: None,
-                                http: Some(Http { status, body }),
+                                http: Some(Http {
+                                    status,
+                                    body: Body::of(body),
+                                }),
                             },
                             Err(e) => Outcome {
                                 error: Some(format!("reading the reply failed: {e}")),
                                 http: Some(Http {
                                     status,
-                                    body: String::new(),
+                                    body: Body::Text(String::new()),
                                 }),
                             },
                         }

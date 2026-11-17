@@ -15,7 +15,7 @@ On Linux or macOS.
 3. Keep `events serve` running under your platform's supervisor: a systemd user service with lingering on Linux, a launchd agent on macOS. Your Claude can write it. On its first start serve makes its home, `~/.local/share/events` (700), with an empty `store.jsonl` and a `.env` of empty keys. One serve runs a home; a second exits with an error.
 4. Fill the keys in `~/.local/share/events/.env`; `events serve --help` says which they are and where they come from. serve reads them each time it sends, so it needs no restart.
 
-`EVENTS_HOME` puts the home elsewhere; so does `XDG_DATA_HOME`, as `$XDG_DATA_HOME/events`.
+The home is `$EVENTS_HOME`; if that is unset, `$XDG_DATA_HOME/events`; if that is unset too, `~/.local/share/events`.
 
 ## Uninstall
 

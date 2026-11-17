@@ -7,12 +7,21 @@ use jiff::Timestamp;
 
 /// Claude plans your events. They happen.
 ///
-/// `events serve` is the one live process; every other command asks it at the door,
-/// `serve.sock` in the home (`$EVENTS_HOME`, else `$XDG_DATA_HOME/events`, else
-/// `~/.local/share/events`). Answers are JSON, one event a line: read them with jq.
+/// An event, and what it is made of:
+///
+/// - Event: when it happens (--at), who added it (--label), how hard to try it (--retries,
+///   --timeout). Once its moment has passed it is expired, and holds what its function got.
+///   - Function: what happens at that moment. Today one kind: pushover, a message on a phone.
+///     - Arguments: the function's fields, in JSON: {"pushover":{"title":"exam","message":"13:20"}}
+///     - Result: what came back: {"error":null,"http":{"status":200,"body":{"json":{"status":1}}}}
+///
+/// `events serve` is the one live process; every other command asks it at the door, serve.sock
+/// in the home. The home is $EVENTS_HOME; if that is unset, $XDG_DATA_HOME/events; if that is
+/// unset too, ~/.local/share/events. Answers are JSON, one event a line: read them with jq.
 #[derive(Parser)]
 #[command(
     version,
+    verbatim_doc_comment,
     after_help = concat!(
         "Something wrong, or missing? Tell your user, and with their word open an issue: ",
         env!("CARGO_PKG_REPOSITORY"),
@@ -26,10 +35,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Add an event. Its function is JSON on stdin, such as
-    /// {"pushover":{"title":"exam","message":"13:20, bring a calculator"}}; the fields of
-    /// pushover are named as https://pushover.net/api names them. Prints the event added.
+    /// Add an event. Prints the event added.
+    ///
+    /// Its function and the function's arguments come by --function. For pushover: message,
+    /// required; title, url, url_title, priority (-2 to 2), sound, timestamp, ttl, device, html,
+    /// monospace, retry and expire (both needed with priority 2), callback, tags,
+    /// attachment_base64, attachment_type: each named and meant as https://pushover.net/api says.
+    /// The keys are not arguments: serve reads them from .env (see serve --help).
     Add {
+        /// The function and its arguments, taken as curl's -d takes data: the JSON itself, @FILE
+        /// for a file, or @- for stdin. Through @FILE or @- a message stays out of ps.
+        #[arg(long, value_name = "JSON|@FILE|@-")]
+        function: String,
         /// When to run it, RFC 3339: 2026-11-24T11:30:00+08:00 or 2026-11-24T03:30:00Z. It must
         /// be still to come.
         #[arg(long)]
@@ -85,19 +102,13 @@ fn run(command: Command) -> Result<()> {
     match command {
         Command::Serve => events::serve(&home),
         Command::Add {
+            function,
             at,
             label,
             retries,
             timeout,
         } => {
-            let mut json = String::new();
-            std::io::stdin()
-                .read_to_string(&mut json)
-                .map_err(|source| events::Error::Io {
-                    what: "reading the function from stdin",
-                    source,
-                })?;
-            let function = Function::from_json(&json)?;
+            let function = Function::from_json(&data(function)?)?;
             let added = events::ask(
                 &home,
                 &Request::Add {
@@ -133,6 +144,28 @@ fn run(command: Command) -> Result<()> {
             events::ask(&home, &Request::Stop {})?;
             Ok(())
         }
+    }
+}
+
+/// Data as curl's -d takes it: `@-` is stdin, `@FILE` a file, anything else the data itself.
+fn data(arg: String) -> Result<String> {
+    match arg.strip_prefix('@') {
+        Some("-") => {
+            let mut text = String::new();
+            std::io::stdin()
+                .read_to_string(&mut text)
+                .map_err(|source| events::Error::Io {
+                    what: "reading the function from stdin",
+                    source,
+                })?;
+            Ok(text)
+        }
+        Some(path) => std::fs::read_to_string(path).map_err(|source| events::Error::File {
+            what: "reading the function from",
+            path: path.into(),
+            source,
+        }),
+        None => Ok(arg),
     }
 }
 

@@ -53,7 +53,7 @@ fn settles(outcome: &Outcome) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::Http;
+    use crate::event::{Body, Http};
 
     #[test]
     fn a_reply_below_500_settles_and_anything_else_is_tried_again() {
@@ -61,7 +61,7 @@ mod tests {
             error: None,
             http: Some(Http {
                 status,
-                body: String::new(),
+                body: Body::Text(String::new()),
             }),
         };
         assert!(settles(&reply(200)));

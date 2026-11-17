@@ -42,7 +42,27 @@ pub struct Outcome {
 #[serde(deny_unknown_fields)]
 pub struct Http {
     pub status: u16,
-    pub body: String,
+    pub body: Body,
+}
+
+/// A reply's body, one of two: `{"json":{...}}` when it reads as JSON, `{"text":"..."}` when it
+/// does not.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Body {
+    Json(serde_json::Value),
+    Text(String),
+}
+
+impl Body {
+    /// The body as JSON if it reads as JSON, else as text.
+    pub fn of(text: String) -> Body {
+        match serde_json::from_str(&text) {
+            Ok(json) => Body::Json(json),
+            // not JSON: it is kept as the text it is
+            Err(_) => Body::Text(text),
+        }
+    }
 }
 
 /// Where a waiting event stands at a moment.
