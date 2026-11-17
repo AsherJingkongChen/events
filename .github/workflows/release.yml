@@ -31,18 +31,15 @@ jobs:
         if: github.ref_type == 'tag'
         run: test "${GITHUB_REF_NAME}" = "v$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
       - run: cargo build --release --locked --target "${{ matrix.target }}"
-      - name: Pack the binary and the skill
+      - name: Pack the binary
         run: |
           mkdir dist
-          tar -czf "dist/events-${GITHUB_REF_NAME}-${{ matrix.target }}.tgz" \
-            -C "target/${{ matrix.target }}/release" events \
-            -C "${GITHUB_WORKSPACE}" .claude/skills/events
-      - name: What was packed runs, and holds the skill
+          tar -czf "dist/events-${GITHUB_REF_NAME}-${{ matrix.target }}.tgz" -C "target/${{ matrix.target }}/release" events
+      - name: What was packed runs
         run: |
           mkdir unpacked
           tar -xzf dist/*.tgz -C unpacked
           unpacked/events --version
-          test -s unpacked/.claude/skills/events/SKILL.md
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
