@@ -77,10 +77,12 @@ enum Command {
         #[arg(long, value_name = "SECONDS", default_value_t = 30)]
         timeout: u64,
     },
-    /// Print the events still waiting, one a line; with --expired, the ones whose moment has
-    /// passed; with an id, that one. An expired event's result.http is the reply it got: a 2xx
-    /// status is done, another failed; null is missed, and result.error says why.
+    /// Print the events still waiting, one a line, the earliest moment first; with --expired, the
+    /// ones whose moment has passed; with an id, that one. An expired event's result.http is the
+    /// reply it got: a 2xx status is done, another failed; null is missed, and result.error says
+    /// why. A result that is null itself is missed too: nothing was tried, all through its time.
     Get {
+        /// The id of the one event to print, waiting or expired.
         id: Option<u64>,
         /// The expired events instead of the waiting ones.
         #[arg(long)]
@@ -90,11 +92,16 @@ enum Command {
         short: bool,
     },
     /// Delete an event. Prints the event deleted.
-    Del { id: u64 },
+    Del {
+        /// The id of the event to delete, waiting or expired.
+        id: u64,
+    },
     /// End serve.
     Stop,
     /// Be the one live process: run each event at its moment, answer at the door. Its event loop
-    /// does one thing at a time, so events at the same moment run one after another.
+    /// does one thing at a time: events at the same moment run one after another, in the order
+    /// they were added, and while one is tried, for retries × timeout seconds at most, every
+    /// command waits its turn.
     ///
     /// It makes the home if it is missing, and holds it: a second serve on the same home exits
     /// with an error. The home's .env holds the keys, which the user fills and serve reads each

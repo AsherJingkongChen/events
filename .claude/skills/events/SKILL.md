@@ -11,13 +11,15 @@ allowed-tools: Bash(events --help), Bash(events add --help), Bash(events get --h
 What you hand it, and what it hands back, is a pyramid. What to judge at each level:
 
 - **Event**: when (`--at`), who (`--label`, your name), how hard to try (`--retries`, `--timeout`).
+  - Read the clock before you name a moment: `date -Iseconds`, never your memory of what time it is. `--at` needs an offset; when the user names a time of day, it is their offset.
   - One event is one moment. To warn early, add a second event at the earlier moment.
   - Its moment must be still to come. There is no update: `events del ID`, then add again.
-  - serve does one thing at a time, so events at the same moment run one after another and a slow one holds the next: space events that matter a minute apart.
+  - serve does one thing at a time. While it tries an event, which with the network down takes all of retries × timeout seconds, the next event waits and so does every command: space events that matter a minute apart.
+  - An `add` that was cut off or timed out may have gone through: `events get` before you add it again.
   - Expired events are never deleted for you; they are the record. Delete only what the user wants gone.
   - **Function**: what happens at the moment. Today one kind, `pushover`, a message on the user's phone.
     - **Arguments**: the function's fields, by `--function`. To wake someone, `"priority":2` with `"retry"` (seconds between repeats, 30 or more) and `"expire"` (seconds it keeps repeating, 10800 at most) repeats until the user taps it; `"priority":1` sounds through quiet hours. A message others on the machine should not see in `ps` goes by `--function @-` from a heredoc.
-    - **Result**: what came back, once the event has expired. `result.http.status` 2xx: done. Another status: failed, and `result.http.body` says why. `result.http` null: missed, and `result.error` says why. `result` null: missed, because serve was not running at its moment. Nothing missed or failed is tried again: tell the user.
+    - **Result**: what came back, once the event has expired. `result.http.status` 2xx: done. Another status: failed, and `result.http.body` says why. `result.http` null: missed, and `result.error` says why. `result` null: missed and never tried, because all through its time serve was not running, or was held by another event. `events get --expired --short` names each one done, failed or missed. Nothing missed or failed is tried again: tell the user.
 - **Keys**: they live in the home's `.env`, which only the user fills (`events serve --help` names them). When `result.error` names one, tell the user which and where it comes from. Never open `.env` or anything else in the home.
 - **serve not running**: the README of the repo says how it is kept alive; say so to the user rather than starting one on your own.
 - **Something wrong with events itself**: tell the user, and with their word open an issue at the address that ends `events --help`.
