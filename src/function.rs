@@ -24,21 +24,37 @@ pub enum Function {
 #[serde(deny_unknown_fields)]
 pub struct Pushover {
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub url_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub priority: Option<i8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sound: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ttl: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub device: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub html: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub monospace: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub retry: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub expire: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub callback: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub attachment_base64: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub attachment_type: Option<String>,
 }
 
