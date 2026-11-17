@@ -16,6 +16,7 @@ What you hand it, and what it hands back, is a pyramid. What to judge at each le
   - Its moment must be still to come. There is no update: `events del ID`, then add again.
   - serve does one thing at a time. While it tries an event, which with the network down takes all of retries × timeout seconds, the next event waits and so does every command: space events that matter a minute apart.
   - An `add` that was cut off or timed out may have gone through: `events get` before you add it again.
+  - An id is the largest one plus one, so the id of a deleted event can be given to a new one. Find an event with `events get` before you delete it, not by an id you remember; `del` prints what it deleted.
   - Expired events are never deleted for you; they are the record. Delete only what the user wants gone.
   - **Function**: what happens at the moment. Today one kind, `pushover`, a message on the user's phone.
     - **Arguments**: the function's fields, by `--function`. To wake someone, `"priority":2` with `"retry"` (seconds between repeats, 30 or more) and `"expire"` (seconds it keeps repeating, 10800 at most) repeats until the user taps it; `"priority":1` sounds through quiet hours. A message others on the machine should not see in `ps` goes by `--function @-` from a heredoc.
