@@ -1,8 +1,11 @@
 name: release
 
-# A tag v<version> releases that version: a binary for each target, attested, on the release page.
+# A tag v<version> releases that version: an archive for each target, attested, on the release
+# page. Every push to main builds the same archives and releases nothing, so a tag is never the
+# first time a target is built.
 on:
   push:
+    branches: [main]
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
 
 jobs:
@@ -13,38 +16,47 @@ jobs:
         include:
           - { os: macos-15, target: aarch64-apple-darwin }
           - { os: macos-15, target: x86_64-apple-darwin }
-          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          # musl is linked whole into the binary, which then runs whatever libc the machine has
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+      - name: The C compiler for musl, which builds ring
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install --yes musl-tools
       - name: The pinned toolchain from rust-toolchain.toml, for this target
         run: rustup toolchain install && rustup target add "${{ matrix.target }}"
       - name: The tag names the version in Cargo.toml
+        if: github.ref_type == 'tag'
         run: test "${GITHUB_REF_NAME}" = "v$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
       - run: cargo build --release --locked --target "${{ matrix.target }}"
-      - name: Pack
+      - name: Pack the binary and the skill
         run: |
           mkdir dist
-          tar -czf "dist/events-${GITHUB_REF_NAME}-${{ matrix.target }}.tgz" -C "target/${{ matrix.target }}/release" events
-      - uses: actions/upload-artifact@v4
+          tar -czf "dist/events-${GITHUB_REF_NAME}-${{ matrix.target }}.tgz" \
+            -C "target/${{ matrix.target }}/release" events \
+            -C "${GITHUB_WORKSPACE}" .claude/skills/events
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: dist/
 
   publish:
+    if: github.ref_type == 'tag'
     needs: build
     runs-on: ubuntu-latest
     permissions:
+      artifact-metadata: write
       attestations: write
       contents: write
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist/
           merge-multiple: true
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest@v4
         with:
           subject-path: dist/*.tgz
       - name: Release
