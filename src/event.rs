@@ -1,5 +1,7 @@
 //! An event, and the packets that clients and serve trade at the door.
 
+use std::time::Duration;
+
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 
@@ -87,22 +89,26 @@ impl Outcome {
 }
 
 impl Event {
-    /// The last moment a try may start: `at`, and then `retries` tries of `timeout` seconds each.
-    pub fn last_moment(&self) -> Result<Timestamp> {
-        let too_long = || {
-            Error::InvalidInput(format!(
-                "{} tries of {} s from {} reach past any time there is",
-                self.retries, self.timeout, self.at
-            ))
-        };
-        let seconds = self
-            .timeout
+    /// How long after `at` a try may still start: `retries` tries of `timeout` seconds each. It is
+    /// how late the event may run and still be of use.
+    pub fn window(&self) -> Result<Duration> {
+        self.timeout
             .checked_mul(u64::from(self.retries))
-            .ok_or_else(too_long)?;
-        let seconds = i64::try_from(seconds).map_err(|_| too_long())?;
-        self.at
-            .checked_add(SignedDuration::from_secs(seconds))
-            .map_err(|_| too_long())
+            .map(Duration::from_secs)
+            .ok_or_else(|| self.too_long())
+    }
+
+    /// The last moment a try may start: `at`, and then its window.
+    pub fn last_moment(&self) -> Result<Timestamp> {
+        let window = SignedDuration::try_from(self.window()?).map_err(|_| self.too_long())?;
+        self.at.checked_add(window).map_err(|_| self.too_long())
+    }
+
+    fn too_long(&self) -> Error {
+        Error::InvalidInput(format!(
+            "{} tries of {} s from {} reach past any time there is",
+            self.retries, self.timeout, self.at
+        ))
     }
 
     /// Where this event stands at `now`, while it waits.

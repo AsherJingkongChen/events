@@ -11,12 +11,16 @@ pub enum Error {
     /// What serve answered when it would not do a request.
     #[error("serve refused: {0}")]
     Refused(String),
-    #[error("serve is not running: nobody answers at {}", .path.display())]
+    #[error("serve is not running: nobody answers at {}: {source}", .path.display())]
     NotServing {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
+    /// serve took the request and ended before it answered: what was asked may be done or not,
+    /// and `get` from the next serve shows which.
+    #[error("serve hung up without answering")]
+    HungUp,
     #[error("another serve already holds {}", .0.display())]
     AlreadyServing(PathBuf),
     #[error("{what} {}: {source}", .path.display())]

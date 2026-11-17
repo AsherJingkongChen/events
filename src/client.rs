@@ -29,6 +29,9 @@ pub fn ask(home: &Home, request: &Request) -> Result<serde_json::Value> {
             what: "reading the response",
             source,
         })?;
+    if reply.is_empty() {
+        return Err(Error::HungUp);
+    }
     match serde_json::from_str(&reply)? {
         Response::Ok(value) => Ok(value),
         Response::Err(why) => Err(Error::Refused(why)),

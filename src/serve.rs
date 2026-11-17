@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
 
@@ -12,14 +12,12 @@ use crate::event::{Due, Event, Request, Response};
 use crate::home::Home;
 use crate::{Error, Result, shipit};
 
-/// The longest the loop sleeps between looks at the clock. It sleeps on a steady clock while events
-/// are set on the wall clock, which can be moved; looking again at least this often bounds how
-/// late a moved clock can make an event.
-const LOOK_AGAIN: Duration = Duration::from_secs(60);
-
-/// How long a client may take to send its line. The loop waits for nobody else meanwhile, so a
-/// client that connects and says nothing must not hold it.
-const CLIENT_SILENCE: Duration = Duration::from_secs(10);
+/// How long the loop waits on a client: this long for its line, and this long for it to take the
+/// answer. A client of ours sends its line the moment it connects (55 µs after, measured) and
+/// reads until it has its answer, so this is not a time any of them needs. The loop waits for
+/// nobody else meanwhile: it is how long a client that stopped half-way can hold the loop, and so
+/// how late one can make an event.
+const CLIENT_WAIT: Duration = Duration::from_secs(10);
 
 /// Make the home if it is missing, hold it, open the door, and run the loop until a client asks
 /// to stop.
@@ -45,6 +43,8 @@ pub fn serve(home: &Home) -> Result<()> {
         source,
     })?;
     let mut events = home.load()?;
+    // memory is kept in the order events happen: by moment, then by id
+    events.sort_by_key(|e| (e.at, e.id));
 
     let (knock, knocks) = mpsc::channel();
     thread::spawn(move || {
@@ -57,8 +57,12 @@ pub fn serve(home: &Home) -> Result<()> {
 
     loop {
         settle(&mut events, home)?;
-        let sleep = until_next(&events, Timestamp::now());
-        match knocks.recv_timeout(sleep) {
+        let knocked = match until_next(&events, Timestamp::now())? {
+            Some(sleep) => knocks.recv_timeout(sleep),
+            // nothing waits: there is nothing to be late for, until someone knocks
+            None => knocks.recv().map_err(|_| RecvTimeoutError::Disconnected),
+        };
+        match knocked {
             Ok(Ok(stream)) => {
                 if answer(stream, &mut events, home) == Flow::Stop {
                     return Ok(());
@@ -76,9 +80,9 @@ pub fn serve(home: &Home) -> Result<()> {
     }
 }
 
-/// Run each waiting event whose moment has come, in the order they were added, and expire each
-/// one missed; memory is snapshotted after each change. A snapshot that fails ends serve: memory
-/// and the store must not part, and a restart reads the store again.
+/// Run each waiting event whose moment has come, the earliest moment first, and expire each one
+/// missed; memory is snapshotted after each change. A snapshot that fails ends serve: memory and
+/// the store must not part, and a restart reads the store again.
 fn settle(events: &mut [Event], home: &Home) -> Result<()> {
     for i in 0..events.len() {
         let due = match events.get(i) {
@@ -99,17 +103,28 @@ fn settle(events: &mut [Event], home: &Home) -> Result<()> {
     Ok(())
 }
 
-/// How long to sleep: until the next waiting event's moment, and no longer than `LOOK_AGAIN`.
-fn until_next(events: &[Event], now: Timestamp) -> Duration {
-    events
-        .iter()
-        .filter(|e| !e.expired)
-        .map(|e| match Duration::try_from(e.at.duration_since(now)) {
+/// How long to sleep: until the next waiting event's moment, and no longer than any waiting
+/// event's window. None when nothing waits.
+///
+/// The loop sleeps on a steady clock, which stands still while the machine is suspended; events
+/// are set on the wall clock, which goes on, and can be moved. An event says how late it may run,
+/// its window: looking at the clock again within it keeps the loop's own sleep from being why an
+/// event is missed.
+fn until_next(events: &[Event], now: Timestamp) -> Result<Option<Duration>> {
+    let mut sleep = None;
+    for event in events.iter().filter(|e| !e.expired) {
+        let until = match Duration::try_from(event.at.duration_since(now)) {
             Ok(d) => d,
             // its moment passed while the loop was busy: look again now
             Err(_) => Duration::ZERO,
-        })
-        .fold(LOOK_AGAIN, Duration::min)
+        };
+        let look = until.min(event.window()?);
+        sleep = match sleep {
+            Some(sooner) => Some(look.min(sooner)),
+            None => Some(look),
+        };
+    }
+    Ok(sleep)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -123,7 +138,7 @@ enum Flow {
 fn answer(stream: UnixStream, events: &mut Vec<Event>, home: &Home) -> Flow {
     let mut line = String::new();
     let read = stream
-        .set_read_timeout(Some(CLIENT_SILENCE))
+        .set_read_timeout(Some(CLIENT_WAIT))
         .and_then(|()| BufReader::new(&stream).read_line(&mut line));
     let (response, flow) = match read {
         Ok(_) => match serde_json::from_str::<Request>(&line) {
@@ -136,14 +151,40 @@ fn answer(stream: UnixStream, events: &mut Vec<Event>, home: &Home) -> Flow {
         text.push('\n');
         text
     });
-    match sent.map(|text| (&stream).write_all(text.as_bytes())) {
+    match sent.map(|text| write_within(&stream, text.as_bytes(), CLIENT_WAIT)) {
         Ok(Ok(())) => {}
-        // the client hung up before hearing back; it will ask again
+        // the client hung up, or would not take its answer: what was asked is done all the same,
+        // and `get` shows it
         Ok(Err(_)) => {}
         // a response is a string or JSON already: it always serializes
         Err(_) => {}
     }
     flow
+}
+
+/// Write all of `bytes`, in `limit` at most from the first byte to the last. A timeout on the
+/// socket alone bounds each write, not their sum: a write that sent a part before its time ran
+/// out counts as done, and the next is given the whole time again.
+fn write_within(mut stream: &UnixStream, bytes: &[u8], limit: Duration) -> std::io::Result<()> {
+    let began = Instant::now();
+    let mut rest = bytes;
+    while !rest.is_empty() {
+        let left = match limit.checked_sub(began.elapsed()) {
+            Some(left) if !left.is_zero() => left,
+            Some(_) | None => return Err(std::io::ErrorKind::TimedOut.into()),
+        };
+        stream.set_write_timeout(Some(left))?;
+        let sent = match stream.write(rest) {
+            Ok(sent) => sent,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        rest = match rest.get(sent..) {
+            Some(rest) if sent > 0 => rest,
+            Some(_) | None => return Err(std::io::ErrorKind::WriteZero.into()),
+        };
+    }
+    Ok(())
 }
 
 fn respond(request: Request, events: &mut Vec<Event>, home: &Home) -> (Response, Flow) {
@@ -199,9 +240,11 @@ fn add(event: Event, events: &mut Vec<Event>, home: &Home) -> Result<serde_json:
     event.last_moment()?;
     event.function.check()?;
     let value = serde_json::to_value(&event)?;
-    events.push(event);
+    // its place in memory: after every event of an earlier moment, or of the same moment
+    let i = events.partition_point(|e| (e.at, e.id) <= (event.at, event.id));
+    events.insert(i, event);
     if let Err(e) = home.save(events) {
-        events.pop();
+        events.remove(i);
         return Err(e);
     }
     Ok(value)
@@ -237,4 +280,38 @@ fn next_id(events: &[Event]) -> Result<u64> {
 
 fn json(event: &Event) -> Result<serde_json::Value> {
     Ok(serde_json::to_value(event)?)
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "in a test an unwrap that fails is the test failing"
+)]
+mod tests {
+    use jiff::SignedDuration;
+
+    use super::*;
+    use crate::function::{Function, Pushover};
+
+    #[test]
+    fn the_loop_sleeps_to_the_next_moment_and_no_longer_than_a_window() {
+        let now: Timestamp = "2026-11-24T03:00:00Z".parse().unwrap();
+        let event = |ahead: i64, expired| Event {
+            id: 1,
+            label: "kiku".into(),
+            at: now.checked_add(SignedDuration::from_secs(ahead)).unwrap(),
+            retries: 3,
+            timeout: 30,
+            function: Function::Pushover(Pushover::new("13:20")),
+            expired,
+            result: None,
+        };
+        let sleep = |events: &[Event]| until_next(events, now).unwrap();
+        assert_eq!(sleep(&[]), None);
+        assert_eq!(sleep(&[event(-3600, true)]), None);
+        assert_eq!(sleep(&[event(20, false)]), Some(Duration::from_secs(20)));
+        // far off: the loop still looks at the clock once in its window, 3 tries of 30 s
+        assert_eq!(sleep(&[event(3600, false)]), Some(Duration::from_secs(90)));
+        assert_eq!(sleep(&[event(-5, false)]), Some(Duration::ZERO));
+    }
 }
