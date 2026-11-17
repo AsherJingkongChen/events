@@ -11,7 +11,7 @@ allowed-tools: Bash(events --help), Bash(events add --help), Bash(events get --h
 What you hand it, and what it hands back, is a pyramid. What to judge at each level:
 
 - **Event**: when (`--at`), who (`--label`, your name), how hard to try (`--retries`, `--timeout`).
-  - Read the clock before you name a moment: `date -Iseconds`, never your memory of what time it is. `--at` needs an offset; when the user names a time of day, it is their offset.
+  - When you do not know what time it is now, read the clock before you name a moment: `date -Iseconds`. `--at` needs an offset; when the user names a time of day, it is their offset.
   - One event is one moment. To warn early, add a second event at the earlier moment.
   - Its moment must be still to come. There is no update: `events del ID`, then add again.
   - serve does one thing at a time. While it tries an event, which with the network down takes all of retries × timeout seconds, the next event waits and so does every command: space events that matter a minute apart.
