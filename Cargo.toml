@@ -1,0 +1,49 @@
+[package]
+name = "events"
+description = "Claude plans your events. They happen."
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+repository = "https://github.com/AsherJingkongChen/events"
+
+[dependencies]
+clap = { version = "4.6.8", features = ["derive"] }
+dotenvy = "0.15.7"
+jiff = { version = "1.0.0", features = ["serde"] }
+nix = { version = "0.32.0", features = ["process", "signal"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tempfile = "3.27.0"
+thiserror = "2.0.21"
+wait-timeout = "0.2.1"
+
+# The lint wall of paintcode: no hidden defaults or fallbacks (clippy.toml), no panics, no unsafe.
+# The clippy lints are deny, not forbid: clap's derive allows clippy's groups in the code it
+# writes, and a forbid refuses any allow. allow_attributes still keeps allow out of ours.
+[lints.rust]
+dead_code = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_sign_loss = "deny"
+disallowed_methods = "deny"
+disallowed_types = "deny"
+expect_used = "deny"
+manual_unwrap_or = "deny"
+manual_unwrap_or_default = "deny"
+panic = "deny"
+todo = "deny"
+too_many_arguments = "deny"
+unimplemented = "deny"
+unwrap_used = "deny"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "s"
+strip = "symbols"

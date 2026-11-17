@@ -1,0 +1,5 @@
+# A build is the same build everywhere; moving the version is a commit of its own.
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
