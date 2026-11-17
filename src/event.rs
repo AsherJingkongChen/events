@@ -151,12 +151,28 @@ pub enum Request {
         timeout: u64,
         function: Box<Function>,
     },
-    /// The event of `id`; or, with no id, the events expired or not as `expired` says.
-    Get { id: Option<u64>, expired: bool },
+    /// The event of `id`; or, with no id, the events expired or not as `expired` says, in the
+    /// order `sort` names, the first `limit` of them at most.
+    Get {
+        id: Option<u64>,
+        expired: bool,
+        sort: Sort,
+        limit: Option<usize>,
+    },
     /// Delete the event of `id`; serve answers with it.
     Del { id: u64 },
     /// End serve.
     Stop {},
+}
+
+/// The order `get` prints events in. Memory and the store are in the order of ids; the other two
+/// keep that order among events that tie.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum Sort {
+    Id,
+    At,
+    Label,
 }
 
 /// What serve answers, one JSON line: `{"ok":...}` or `{"err":"..."}`.

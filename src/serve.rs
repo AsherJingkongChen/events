@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
 
-use crate::event::{Due, Event, Request, Response};
+use crate::event::{Due, Event, Request, Response, Sort};
 use crate::home::Home;
 use crate::{Error, Result, shipit};
 
@@ -43,8 +43,6 @@ pub fn serve(home: &Home) -> Result<()> {
         source,
     })?;
     let mut events = home.load()?;
-    // memory is kept in the order events happen: by moment, then by id
-    events.sort_by_key(|e| (e.at, e.id));
 
     let (knock, knocks) = mpsc::channel();
     thread::spawn(move || {
@@ -80,7 +78,7 @@ pub fn serve(home: &Home) -> Result<()> {
     }
 }
 
-/// Run each waiting event whose moment has come, the earliest moment first, and expire each one
+/// Run each waiting event whose moment has come, in the order of their ids, and expire each one
 /// missed; memory is snapshotted after each change. A snapshot that fails ends serve: memory and
 /// the store must not part, and a restart reads the store again.
 fn settle(events: &mut [Event], home: &Home) -> Result<()> {
@@ -214,8 +212,22 @@ fn respond(request: Request, events: &mut Vec<Event>, home: &Home) -> (Response,
             home,
         ),
         Request::Get { id: Some(id), .. } => find(events, id).and_then(|i| json(&events[i])),
-        Request::Get { id: None, expired } => {
-            let picked: Vec<&Event> = events.iter().filter(|e| e.expired == expired).collect();
+        Request::Get {
+            id: None,
+            expired,
+            sort,
+            limit,
+        } => {
+            let mut picked: Vec<&Event> = events.iter().filter(|e| e.expired == expired).collect();
+            // memory is in id order already; the other orders fall back on it for ties
+            match sort {
+                Sort::Id => {}
+                Sort::At => picked.sort_by_key(|e| e.at),
+                Sort::Label => picked.sort_by(|a, b| a.label.cmp(&b.label)),
+            }
+            if let Some(limit) = limit {
+                picked.truncate(limit);
+            }
             serde_json::to_value(picked).map_err(Error::from)
         }
         Request::Del { id } => del(id, events, home),
@@ -240,11 +252,10 @@ fn add(event: Event, events: &mut Vec<Event>, home: &Home) -> Result<serde_json:
     event.last_moment()?;
     event.function.check()?;
     let value = serde_json::to_value(&event)?;
-    // its place in memory: after every event of an earlier moment, or of the same moment
-    let i = events.partition_point(|e| (e.at, e.id) <= (event.at, event.id));
-    events.insert(i, event);
+    // memory and the store are rows in the order of their ids: a new row goes last
+    events.push(event);
     if let Err(e) = home.save(events) {
-        events.remove(i);
+        events.pop();
         return Err(e);
     }
     Ok(value)
@@ -268,10 +279,12 @@ fn find(events: &[Event], id: u64) -> Result<usize> {
         .ok_or_else(|| Error::InvalidInput(format!("no event has id {id}")))
 }
 
-/// One past the largest id there is, or 1 for the first.
+/// The id after the last row's, or 1 for the first: rows are in the order of their ids, so the
+/// last row holds the id given before this one.
 fn next_id(events: &[Event]) -> Result<u64> {
-    match events.iter().map(|e| e.id).max() {
-        Some(max) => max
+    match events.last() {
+        Some(prev) => prev
+            .id
             .checked_add(1)
             .ok_or_else(|| Error::InvalidInput("every id is taken".into())),
         None => Ok(1),

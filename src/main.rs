@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use events::{Event, Function, Home, Request, Result};
+use events::{Event, Function, Home, Request, Result, Sort};
 use jiff::Timestamp;
 
 /// Claude plans your events. They happen.
@@ -16,7 +16,7 @@ use jiff::Timestamp;
 ///     - Result: what came back: {"error":null,"http":{"status":200,"body":{"json":{"status":1}}}}
 ///
 /// The same, every part, as JSON in BNF. Times are RFC 3339 in UTC, timeout is in seconds. A
-/// pushover field that is null may be left out of --function.
+/// pushover field that is null is left out: it need not be in --function, and it is not printed.
 ///
 ///   event    ::= { id: uint, label: string, at: rfc3339, retries: uint, timeout: uint,
 ///                  function: function, expired: bool, result: result | null }
@@ -77,7 +77,7 @@ enum Command {
         #[arg(long, value_name = "SECONDS", default_value_t = 30)]
         timeout: u64,
     },
-    /// Print the events still waiting, one a line, the earliest moment first; with --expired, the
+    /// Print the events still waiting, one a line, in the order of their ids; with --expired, the
     /// ones whose moment has passed; with an id, that one. An expired event's result.http is the
     /// reply it got: a 2xx status is done, another failed; null is missed, and result.error says
     /// why. A result that is null itself is missed too: nothing was tried, all through its time.
@@ -87,6 +87,12 @@ enum Command {
         /// The expired events instead of the waiting ones.
         #[arg(long)]
         expired: bool,
+        /// The order to print them in.
+        #[arg(long, value_enum, default_value_t = Sort::Id)]
+        sort: Sort,
+        /// Print the first N at most, in that order.
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
         /// One line an event: id | at | label: waiting, or expired, done / failed / missed.
         #[arg(long)]
         short: bool,
@@ -144,8 +150,22 @@ fn run(command: Command) -> Result<()> {
             )?;
             say(&line(serde_json::from_value(added)?)?)
         }
-        Command::Get { id, expired, short } => {
-            let got = events::ask(&home, &Request::Get { id, expired })?;
+        Command::Get {
+            id,
+            expired,
+            sort,
+            limit,
+            short,
+        } => {
+            let got = events::ask(
+                &home,
+                &Request::Get {
+                    id,
+                    expired,
+                    sort,
+                    limit,
+                },
+            )?;
             let got: Vec<Event> = match got {
                 serde_json::Value::Array(_) => serde_json::from_value(got)?,
                 one => vec![serde_json::from_value(one)?],
