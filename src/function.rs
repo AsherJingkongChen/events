@@ -135,6 +135,11 @@ impl Function {
         Ok(serde_json::from_str(json)?)
     }
 
+    /// The name of every key in `.env` that some kind of function needs.
+    pub fn env_keys() -> impl Iterator<Item = &'static str> {
+        PUSHOVER_KEYS.iter().map(|key| key.env)
+    }
+
     /// Send it, waiting at most `timeout` for the whole reply. `keys` are `.env`'s: one missing or
     /// empty is the reason nothing is sent, the error. What comes back, a reply or why none came,
     /// is the outcome.

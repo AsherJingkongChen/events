@@ -10,10 +10,8 @@ use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
 use crate::event::Event;
+use crate::function::Function;
 use crate::{Error, Result};
-
-/// What `.env` holds when it is made: the keys, their values left for the user to fill.
-const ENV_KEYS: &str = "PUSHOVER_API_TOKEN=\nPUSHOVER_USER_KEY=\n";
 
 #[derive(Debug, Clone)]
 pub struct Home {
@@ -59,7 +57,11 @@ impl Home {
         std::fs::set_permissions(&self.dir, Permissions::from_mode(0o700))
             .map_err(|source| file("guarding", &self.dir, source))?;
         make_new(&self.store(), "")?;
-        make_new(&self.env(), ENV_KEYS)
+        // every key a function needs, its value left for the user to fill
+        let keys: String = Function::env_keys()
+            .map(|key| format!("{key}=\n"))
+            .collect();
+        make_new(&self.env(), &keys)
     }
 
     /// Hold the home: the kernel's lock on its folder, kept while the file lives and let go however
@@ -113,9 +115,15 @@ impl Home {
     /// The keys in `.env`, read now and dropped by whoever asked when it is done with them.
     pub fn keys(&self) -> Result<HashMap<String, String>, String> {
         let path = self.env();
-        let iter = dotenvy::from_path_iter(&path)
-            .map_err(|e| format!("reading {}: {e}", path.display()))?;
-        iter.map(|pair| pair.map_err(|e| format!("reading {}: {e}", path.display())))
+        // why it cannot be read goes into the event's result, which every client sees: a line
+        // that does not parse may hold a key, so only where it is is told, never what it says
+        let unread = |e: dotenvy::Error| match e {
+            dotenvy::Error::Io(e) => format!("reading {}: {e}", path.display()),
+            _ => format!("{} has a line that is not KEY=value", path.display()),
+        };
+        dotenvy::from_path_iter(&path)
+            .map_err(unread)?
+            .map(|pair| pair.map_err(unread))
             .collect()
     }
 }
@@ -164,5 +172,17 @@ mod tests {
         assert!(matches!(home.claim(), Err(Error::AlreadyServing(_))));
         drop(held);
         assert!(home.claim().is_ok());
+    }
+
+    #[test]
+    fn a_line_of_env_that_does_not_parse_is_never_told() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = Home {
+            dir: dir.path().to_path_buf(),
+        };
+        home.make().unwrap();
+        std::fs::write(home.env(), "PUSHOVER_API_TOKEN=the-token \"oops\n").unwrap();
+        let why = home.keys().unwrap_err();
+        assert!(!why.contains("the-token"), "{why}");
     }
 }
