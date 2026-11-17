@@ -13,7 +13,7 @@ check-fix:
   cargo fmt
   just check
 
-# The five judgments that are ours: when an event runs, which reply settles it, how long the loop
-# sleeps, that a second serve cannot hold the home, and that a line of .env is never told.
+# The four judgments that are ours: when an event runs, which reply settles it, that a second
+# serve cannot hold the home, and that a line of .env is never told.
 test:
   cargo test

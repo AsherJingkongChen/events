@@ -12,6 +12,10 @@ use crate::event::{Due, Event, Request, Response, Sort};
 use crate::home::Home;
 use crate::{Error, Result, shipit};
 
+/// The loop's tick: it looks at the clock once a second, and between two looks answers whoever
+/// knocks. An event runs within a second of its moment.
+const TICK: Duration = Duration::from_secs(1);
+
 /// Make the home if it is missing, hold it, open the door, and run the loop until a client asks
 /// to stop.
 pub fn serve(home: &Home) -> Result<()> {
@@ -48,12 +52,7 @@ pub fn serve(home: &Home) -> Result<()> {
 
     loop {
         settle(&mut events, home)?;
-        let knocked = match until_next(&events, Timestamp::now())? {
-            Some(sleep) => knocks.recv_timeout(sleep),
-            // nothing waits: there is nothing to be late for, until someone knocks
-            None => knocks.recv().map_err(|_| RecvTimeoutError::Disconnected),
-        };
-        match knocked {
+        match knocks.recv_timeout(TICK) {
             Ok(Ok(stream)) => {
                 if answer(stream, &mut events, home) == Flow::Stop {
                     return Ok(());
@@ -92,30 +91,6 @@ fn settle(events: &mut [Event], home: &Home) -> Result<()> {
         home.save(events)?;
     }
     Ok(())
-}
-
-/// How long to sleep: until the next waiting event's moment, and no longer than any waiting
-/// event's window. None when nothing waits.
-///
-/// The loop sleeps on a steady clock, which stands still while the machine is suspended; events
-/// are set on the wall clock, which goes on, and can be moved. An event says how late it may run,
-/// its window: looking at the clock again within it keeps the loop's own sleep from being why an
-/// event is missed.
-fn until_next(events: &[Event], now: Timestamp) -> Result<Option<Duration>> {
-    let mut sleep = None;
-    for event in events.iter().filter(|e| !e.expired) {
-        let until = match Duration::try_from(event.at.duration_since(now)) {
-            Ok(d) => d,
-            // its moment passed while the loop was busy: look again now
-            Err(_) => Duration::ZERO,
-        };
-        let look = until.min(event.window()?);
-        sleep = match sleep {
-            Some(sooner) => Some(look.min(sooner)),
-            None => Some(look),
-        };
-    }
-    Ok(sleep)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -260,38 +235,4 @@ fn next_id(events: &[Event]) -> Result<u64> {
 
 fn json(event: &Event) -> Result<serde_json::Value> {
     Ok(serde_json::to_value(event)?)
-}
-
-#[cfg(test)]
-#[expect(
-    clippy::unwrap_used,
-    reason = "in a test an unwrap that fails is the test failing"
-)]
-mod tests {
-    use jiff::SignedDuration;
-
-    use super::*;
-    use crate::function::{Function, Pushover};
-
-    #[test]
-    fn the_loop_sleeps_to_the_next_moment_and_no_longer_than_a_window() {
-        let now: Timestamp = "2026-11-24T03:00:00Z".parse().unwrap();
-        let event = |ahead: i64, expired| Event {
-            id: 1,
-            label: "kiku".into(),
-            at: now.checked_add(SignedDuration::from_secs(ahead)).unwrap(),
-            retries: 3,
-            timeout: 30,
-            function: Function::Pushover(Pushover::new("13:20")),
-            expired,
-            result: None,
-        };
-        let sleep = |events: &[Event]| until_next(events, now).unwrap();
-        assert_eq!(sleep(&[]), None);
-        assert_eq!(sleep(&[event(-3600, true)]), None);
-        assert_eq!(sleep(&[event(20, false)]), Some(Duration::from_secs(20)));
-        // far off: the loop still looks at the clock once in its window, 3 tries of 30 s
-        assert_eq!(sleep(&[event(3600, false)]), Some(Duration::from_secs(90)));
-        assert_eq!(sleep(&[event(-5, false)]), Some(Duration::ZERO));
-    }
 }
