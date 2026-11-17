@@ -4,20 +4,13 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use jiff::Timestamp;
 
 use crate::event::{Due, Event, Request, Response, Sort};
 use crate::home::Home;
 use crate::{Error, Result, shipit};
-
-/// How long the loop waits on a client: this long for its line, and this long for it to take the
-/// answer. A client of ours sends its line the moment it connects (55 µs after, measured) and
-/// reads until it has its answer, so this is not a time any of them needs. The loop waits for
-/// nobody else meanwhile: it is how long a client that stopped half-way can hold the loop, and so
-/// how late one can make an event.
-const CLIENT_WAIT: Duration = Duration::from_secs(10);
 
 /// Make the home if it is missing, hold it, open the door, and run the loop until a client asks
 /// to stop.
@@ -131,14 +124,13 @@ enum Flow {
     Stop,
 }
 
-/// Read one request, do it, write one response. What goes wrong with the client's own connection
-/// is the client's to see; serve goes on.
+/// Read one request, do it, write one response. The client is `events` itself: it sends its line
+/// the moment it connects and reads until it has its answer, and when it ends the kernel closes
+/// its end, so the loop sets no time on it. What goes wrong with the client's own connection is
+/// the client's to see; serve goes on.
 fn answer(stream: UnixStream, events: &mut Vec<Event>, home: &Home) -> Flow {
     let mut line = String::new();
-    let read = stream
-        .set_read_timeout(Some(CLIENT_WAIT))
-        .and_then(|()| BufReader::new(&stream).read_line(&mut line));
-    let (response, flow) = match read {
+    let (response, flow) = match BufReader::new(&stream).read_line(&mut line) {
         Ok(_) => match serde_json::from_str::<Request>(&line) {
             Ok(request) => respond(request, events, home),
             Err(e) => (Response::Err(format!("not a request: {e}")), Flow::Go),
@@ -149,40 +141,15 @@ fn answer(stream: UnixStream, events: &mut Vec<Event>, home: &Home) -> Flow {
         text.push('\n');
         text
     });
-    match sent.map(|text| write_within(&stream, text.as_bytes(), CLIENT_WAIT)) {
+    match sent.map(|text| (&stream).write_all(text.as_bytes())) {
         Ok(Ok(())) => {}
-        // the client hung up, or would not take its answer: what was asked is done all the same,
-        // and `get` shows it
+        // the client hung up before hearing back: what it asked was written before the answer,
+        // and stays
         Ok(Err(_)) => {}
         // a response is a string or JSON already: it always serializes
         Err(_) => {}
     }
     flow
-}
-
-/// Write all of `bytes`, in `limit` at most from the first byte to the last. A timeout on the
-/// socket alone bounds each write, not their sum: a write that sent a part before its time ran
-/// out counts as done, and the next is given the whole time again.
-fn write_within(mut stream: &UnixStream, bytes: &[u8], limit: Duration) -> std::io::Result<()> {
-    let began = Instant::now();
-    let mut rest = bytes;
-    while !rest.is_empty() {
-        let left = match limit.checked_sub(began.elapsed()) {
-            Some(left) if !left.is_zero() => left,
-            Some(_) | None => return Err(std::io::ErrorKind::TimedOut.into()),
-        };
-        stream.set_write_timeout(Some(left))?;
-        let sent = match stream.write(rest) {
-            Ok(sent) => sent,
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(e),
-        };
-        rest = match rest.get(sent..) {
-            Some(rest) if sent > 0 => rest,
-            Some(_) | None => return Err(std::io::ErrorKind::WriteZero.into()),
-        };
-    }
-    Ok(())
 }
 
 fn respond(request: Request, events: &mut Vec<Event>, home: &Home) -> (Response, Flow) {
