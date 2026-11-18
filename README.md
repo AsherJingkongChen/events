@@ -10,7 +10,11 @@ This page is the first-time read: installing and uninstalling. Daily use is in t
 
 On Linux or macOS.
 
-1. Take the archive for your machine from https://github.com/AsherJingkongChen/events/releases: there is one for Linux on x86_64 and one for macOS on Apple silicon. It holds the `events` binary: put it on your PATH. `gh attestation verify ARCHIVE --repo AsherJingkongChen/events` checks that the archive was built here. On any other machine, build the binary: `cargo install --locked --git https://github.com/AsherJingkongChen/events`
+1. Put the `events` binary in a folder on your PATH, here `~/.local/bin`. Each archive holds that one file.
+   - Linux on x86_64: `mkdir -p ~/.local/bin && curl -fsSL https://github.com/AsherJingkongChen/events/releases/latest/download/events-x86_64-unknown-linux-musl.tgz | tar -xz -C ~/.local/bin`
+   - macOS on Apple silicon: `mkdir -p ~/.local/bin && curl -fsSL https://github.com/AsherJingkongChen/events/releases/latest/download/events-aarch64-apple-darwin.tgz | tar -xz -C ~/.local/bin`
+   - Any other machine, from source: `cargo install --locked --git https://github.com/AsherJingkongChen/events`
+   - To check that an archive was built here, download it and run `gh attestation verify FILE --repo AsherJingkongChen/events`: it exits 0 when it was.
 2. Put the skill where your Claude reads skills: `events skill ~/.claude/skills`. The binary carries its own skill, so the two are always one version; run it again after you upgrade.
 3. Keep `events serve` running under your platform's supervisor, started at boot and started again when it fails: a systemd user service with lingering on Linux, a launchd agent on macOS. Your Claude can write it. On its first start serve makes its home, `~/.local/share/events` (700), with an empty `store.jsonl` and a `.env` of empty keys. One serve runs a home; a second exits with an error.
 4. Fill the keys in `~/.local/share/events/.env`; `events serve --help` says which they are and where they come from. serve reads them each time it sends, so it needs no restart.

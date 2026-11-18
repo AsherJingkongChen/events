@@ -34,7 +34,7 @@ jobs:
       - name: Pack the binary
         run: |
           mkdir dist
-          tar -czf "dist/events-${GITHUB_REF_NAME}-${{ matrix.target }}.tgz" -C "target/${{ matrix.target }}/release" events
+          tar -czf "dist/events-${{ matrix.target }}.tgz" -C "target/${{ matrix.target }}/release" events
       - name: What was packed runs
         run: |
           mkdir unpacked
