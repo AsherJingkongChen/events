@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -114,7 +115,17 @@ enum Command {
     /// time it sends, so a change needs no restart: PUSHOVER_API_TOKEN, of an application made at
     /// https://pushover.net/apps/build; PUSHOVER_USER_KEY, from the Pushover dashboard.
     Serve,
+    /// Put this version's skill, which tells Claude how to use events, under PATH: it writes
+    /// PATH/events/SKILL.md, over one that is there, and prints the file written. For Claude Code,
+    /// PATH is ~/.claude/skills.
+    Skill {
+        /// The folder of skills to put it in.
+        path: PathBuf,
+    },
 }
+
+/// The skill, part of the source: it is built into the binary, so the two are always one version.
+const SKILL: &str = include_str!("../.claude/skills/events/SKILL.md");
 
 fn main() -> ExitCode {
     match run(Cli::parse().command) {
@@ -129,6 +140,8 @@ fn main() -> ExitCode {
 fn run(command: Command) -> Result<()> {
     let home = Home::locate()?;
     match command {
+        // written from the binary alone: it asks nothing of the home or of serve
+        Command::Skill { path } => skill(&path),
         Command::Serve => events::serve(&home),
         Command::Add {
             function,
@@ -188,6 +201,23 @@ fn run(command: Command) -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// Write the skill to `path/events/SKILL.md`, making the folders on the way, and print where.
+fn skill(path: &Path) -> Result<()> {
+    let folder = path.join("events");
+    std::fs::create_dir_all(&folder).map_err(|source| events::Error::File {
+        what: "making",
+        path: folder.clone(),
+        source,
+    })?;
+    let file = folder.join("SKILL.md");
+    std::fs::write(&file, SKILL).map_err(|source| events::Error::File {
+        what: "writing",
+        path: file.clone(),
+        source,
+    })?;
+    say(&file.display().to_string())
 }
 
 /// Data as curl's -d takes it: `@-` is stdin, `@FILE` a file, anything else the data itself.

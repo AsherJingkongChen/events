@@ -1,7 +1,7 @@
 ---
 name: events
 description: Schedule things that happen on their own at a moment; today, a Pushover message or alarm on the user's phone. Use when the user wants to be reminded, woken or told something at a time ("remind me", "wake me at", "alarm", "ping me when"), or wants to see or cancel what is scheduled.
-allowed-tools: Bash(events --help), Bash(events add --help), Bash(events get --help), Bash(events del --help), Bash(events stop --help), Bash(events serve --help)
+allowed-tools: Bash(events --help), Bash(events add --help), Bash(events get --help), Bash(events del --help), Bash(events stop --help), Bash(events serve --help), Bash(events skill --help)
 ---
 
 # events
@@ -50,4 +50,8 @@ events stop --help
 
 ```!
 events serve --help
+```
+
+```!
+events skill --help
 ```
