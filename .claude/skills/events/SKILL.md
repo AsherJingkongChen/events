@@ -17,7 +17,10 @@ What you hand it, and what it hands back, is a pyramid. What to judge at each le
   - serve does one thing at a time. While it tries an event, which with the network down takes all of retries × timeout seconds, the next event waits and so does every command: space events that matter a minute apart.
   - Expired events are never deleted for you; they are the record. Delete only what the user wants gone.
   - **Function**: what happens at the moment. Today one kind, `pushover`, a message on the user's phone.
-    - **Arguments**: the function's fields, by `--function`. To wake someone, `"priority":2` with `"retry"` (seconds between repeats, 30 or more) and `"expire"` (seconds it keeps repeating, 10800 at most) repeats until the user taps it; `"priority":1` sounds through quiet hours. A message others on the machine should not see in `ps` goes by `--function @-` from a heredoc.
+    - **Arguments**: the function's fields, by `--function`. Two to start from:
+      - A notice, one short sound: `{"pushover":{"title":"…","message":"…","sound":"cashregister"}}`
+      - An alarm, a long sound again every 30 seconds until the user taps it, for 25 minutes at most: `{"pushover":{"title":"…","message":"…","priority":2,"retry":30,"expire":1500,"sound":"updown"}}`. `retry` is the seconds between repeats, 30 at least; `expire` is the seconds it keeps repeating, 10800 at most; Pushover repeats 50 times at most.
+      - A message others on the machine should not see in `ps` goes by `--function @-` from a heredoc.
     - **Result**: what came back, once the event has expired. `result.http.status` 2xx: done. Another status: failed, and `result.http.body` says why. `result.http` null: missed, and `result.error` says why. `result` null: missed and never tried, because all through its time serve was not running, or was held by another event. `events get --expired --short` names each one done, failed or missed. Nothing missed or failed is tried again: tell the user.
 - **Keys**: they live in the home's `.env`, which only the user fills (`events serve --help` names them). When `result.error` names one, tell the user which and where it comes from. Never open `.env` or anything else in the home.
 - **serve not running**: the README of the repo says how it is kept alive; say so to the user rather than starting one on your own.
